@@ -1,0 +1,37 @@
+Version 0.1.0 (12.11.2019)
+
+- Initial version.
+
+-Implemented features:
+  - Command line interface
+  - Transcode Videos to AV1 using libaom-av1
+  - Single-Pass and Two-Pass encoding mode (currently defaulting to Single-Pass)
+  - Scene cut detection with customizable threshold
+  - Scene length control by providing a lower bound to the individual scene length.
+    Shorter detected scenes will be merged to improve encoding efficiency
+  - Scene-parallel encoding using multiple ffmpeg instances
+  - Concurrency control by a configurable upper limit of parallel instances
+  - Deinterlacing support using the yadif filter.
+  - Passing raw, custom encoder parameters to ffmpeg, both global ffmpeg options and encoder-specific options
+  - Resumable encodes: Finished scenes are collected in a specific directory. If the encoding is aborted and
+    restarted, already present data is skipped when the encoding process is restarted.
+  - Customizable data directories
+  - Customizable ffmpeg binary location and name
+  - Integration with Cutelog for log display purposes
+  - Dumping of parsed scenes for inspection purposes
+  - Optional dumping of generated ffmpeg command lines for inspection purposes
+
+- Limitations and missing features:
+  - The output video name is automatically generated and currently can’t be changed.
+  - The output will always be muxed into a matroska container. Raw stream output or other containers are unsupported.
+    Use mkvextract or the muxer of your choice to remux the output video.
+  - Due to the output file handling, encoding multiple videos with names differing only in the extension
+    (e.g. "video.mp4" and "video.avi") will cause a naming conflict and abort the encoding process
+    in the final step, if central data storage is used (with --output-dir or --temp-dir).
+    The encoding in this situation should be resumable, if the videos are processed individually.
+  - If a central data storage is specified, (with --output-dir or --temp-dir),
+    files with the same name but originating from different source directories will collide in the same way
+    as in the point above.
+  - A maximal scene length cannot be specified. This is planned, but the algorithm for this is not yet designed.
+  - No GUI
+  
