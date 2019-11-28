@@ -166,7 +166,7 @@ class AV1LibAomTwoPass2EncoderCommandLine(AbstractEncoderCommandLine):
 
 def transcode_input_file(arguments: Namespace, input_file: InputFile, scenes: SceneList):
     """Transcode a single input file to AV1."""
-    transcode_function = _transcode_two_pass if arguments.enable_two_pass_encode else _transcode_single_pass
+    transcode_function = _transcode_single_pass if arguments.enable_single_pass_encode else _transcode_two_pass
 
     with ThreadPoolExecutor(
             max_workers=arguments.max_concurrent_encodes, thread_name_prefix="ffmpeg_worker") as executor:

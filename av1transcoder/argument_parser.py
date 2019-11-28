@@ -37,7 +37,7 @@ class Namespace(NamedTuple):
     scene_cut_threshold: float
     min_scene_length: int
     max_scene_length: int
-    enable_two_pass_encode: bool
+    enable_single_pass_encode: bool
     encoder_parameters: str
     global_parameters: str
     max_concurrent_encodes: int
@@ -110,26 +110,34 @@ def generate_argument_parser() -> ArgumentParser:
     #          "Defaults to %(default)i"
     # )
     parser.add_argument(
-        "-2", "--two-pass", action="store_true", dest="enable_two_pass_encode",
-        help="Use Two-Pass encoding instead of single pass encoding. Custom encoder parameters will be passed to "
-             "ffmpeg for both passes."
+        "-1", "--single-pass", action="store_true", dest="enable_single_pass_encode",
+        help="Use Single-Pass encoding instead of Two-Pass encoding. Custom encoder parameters are always passed to "
+             "ffmpeg for all encoding passes."
     )
     parser.add_argument(
         "-e", "--encoder-parameters", action="store", metavar="STRINGS",
-        default="-cpu-used 4 -crf 20 -row-mt 1 -frame-parallel 0 -tiles 2x2 -tile-columns 1 -tile-rows 1 -threads 0",
+        # Maybe:
+        # default="-cpu-used 4 -crf 20 -row-mt 1 -frame-parallel 0 -tiles 2x2 -tile-columns 1 -tile-rows 1 -threads 0"
+        # As of writing this, tiles can produce corrupted frames, so disable default tile usage for now.
+        # To have more consistent CPU utilization, disable ffmpeg-internal threading and rely on our -c parameter only.
+        default="-cpu-used 4 -crf 20 -frame-parallel 0 -threads 1",
         help="Add custom encoder parameters to the encoding process. Add all parameters as a single, quoted string. "
              "These parameters will be passed directly to all ffmpeg processes doing the encoding work. As an example, "
-             "the default value is '%(default)s'."
+             "the default value is '%(default)s'. Due to a bug in Python argument parser "
+             "(https://bugs.python.org/issue9334), the parameters MUST NOT begin with a dash (-) when used as "
+             "--encoder-parameters \"<parameters>\". You MUST either begin the quoted custom parameter string with a "
+             "space character or use = to specify the string, like --encoder-parameters=\"-your-parameters-here\""
     )
     parser.add_argument(
         "-g", "--global-parameters", action="store", metavar="STRINGS", default="",
         help="Add custom global parameters to all ffmpeg processes. These are passed in as the first arguments to "
              "ffmpeg before the input file and can be used to enable hardware acceleration or similar global switches. "
              "Example: '-hwaccel cuvid'. "
-             "Default is to add no parameters at all, leaving everything at the default settings."
+             "Default is to add no parameters at all, leaving everything at the default settings. BEWARE: The issue "
+             "described for --encoder-parameters applies here, too."
     )
     parser.add_argument(
-        "-c", "--max-concurrent-encodes", action="store", type=int, default=2,
+        "-c", "--max-concurrent-encodes", action="store", type=int, default=8,
         help="Run up to this many ffmpeg instances in parallel. As of writing this, libaom-av1 is bad at scaling "
              "horizontally, so encode this many video scenes independently and parallel to increase system load and "
              "decrease encoding time. Defaults to %(default)i"
