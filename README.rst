@@ -31,6 +31,21 @@ scenes in the scene repository and skips them, avoiding duplicate work.
 When all scenes are encoded, the ffmpeg concat demuxer is used to join all scenes into a single video file.
 
 
+Two-Pass mode: Technical details
+++++++++++++++++++++++++++++++++
+
+Two-Pass mode uses a simple scheduler to ensure high load throughout the encoding process, avoiding single, long running
+encoding processes remaining at the end of the encodin process and artificially delaying the whole process.
+
+This is done by doing all first pass encodes first and then use the first pass log file size as simple metric to estimate
+the second-pass runtime and schedule the second passes accordingly.
+The used metric assumes there is a linear correlation between first-pass log file size and second-pass encoding time.
+When the encoding tasks are sorted by the log file size and therefore by the assumed relative run time, the program will
+start encoding long running scenes first. This will result in better multicore usage at the end of the processing.
+It avoids starting long scenes, like the ending credits, at the end of the processs, and therefore lessens the impact of
+a single, long encode delaying the whole process. With this scheduling approach, it is way more likely that the
+last running encodings will be encoding short and easy scenes and therefore having less overall delay.
+
 Requirements
 ------------
 

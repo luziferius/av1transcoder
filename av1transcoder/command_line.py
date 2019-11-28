@@ -78,8 +78,8 @@ class AbstractCommandLine:
         if self.dump_mode != "only":
             completed = subprocess.run(self.command_line, executable=self.ffmpeg)
             if completed.returncode:
-                warn_msg = f"ffmpeg command exited with non-zero return value indicating failure. " \
-                           f"Failing input file: {self.input_file.input_file}"
+                warn_msg = f'ffmpeg command exited with non-zero return value indicating failure. ' \
+                           f'Failing input file: "{self.input_file.input_file}".'
                 logger.warning(warn_msg)
                 print(warn_msg, file=sys.stderr)
             else:

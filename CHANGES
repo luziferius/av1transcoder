@@ -1,3 +1,14 @@
+Version 0.2.0 (17.11.2019)
+
+- Split first pass from second pass for two-pass encoding and use a different task scheduler for two-pass encodes.
+  - Use the first-pass log size as simple metric to estimate
+    second-pass runtime and schedule the second passes accordingly.
+    Large logs indicate long and/or complex scenes that take long to encode.
+  - Start encoding long running scenes first, which will result in better multicore usage at the end of the processing.
+  - It avoids starting long scenes, like the credits, at the end of the processs, and therefore lessens the impact of
+    a single, long encode delaying the whole process. With this scheduling approach, it is way more likely that the
+    last running encodings will be encoding short and easy scenes and therefore having less overall delay.
+
 Version 0.1.3 (17.11.2019)
 
 - Fixed broken Two-pass log file moving.

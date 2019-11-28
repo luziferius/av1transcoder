@@ -1,16 +1,14 @@
 TODO:
 - Implement maximum scene length limitation.
+- Stackable silent mode:
+  first suppress ffmpeg output except for warnings, then suppress input level log output, then
+  supress everything except errors, then output nothing.
 
 MAYBE, nice to have ideas:
+- Gracefully finishing running scenes when hitting <Ctrl>+C for the first time, hard aborting on hitting it
+  the second time. The user can use this to abort long processes early without losing any data.
+  Running instances will finish, but no new instances will start in soft exit mode.
 - Use a configuration file to define the default argument values.
-- Use a better two-pass strategy: Perform all first passes first. Then descendingly sort by log file size, then encode the second passes in log file size order.
-  - Log size corrolates with scene length and therefore encoding time.
-  - I hope that the saved time waiting for the last few encoder instances still processing long scenes in the end (movie credits scene encoder starting last!)
-    is longer than the intermediate lost time waiting for all first passes to finish. During the first pass the same happens,
-    but because the first pass is way faster, the effect is way milder.
-  - Running the scenes with large logs first will clear all long scenes in the queue first. At the end of the transcoding process, only short scenes will be left.
-  - The short scenes at the end will encode fast and are getting scheduled to the encoder slots more agile, which should yield better load at the end of the process
-    and less waiting for just a few remaining processes.
 - Use a better merge algorithm.
   - The current greedy algorithm solves the problem well, but does not take the scene cut score into account.
   - For example, maximize the overall scene score value.
