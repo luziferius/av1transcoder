@@ -3,15 +3,23 @@ TODO:
 - Stackable silent mode:
   first suppress ffmpeg output except for warnings, then suppress input level log output, then
   supress everything except errors, then output nothing.
+  This program does not parse the ffmpeg console output,
+  so suppressing it has no negative impact on the correctness.
 
 MAYBE, nice to have ideas:
+- Automatically crop black borders in the input file, as an alternative to the manual --crop argument.
+  If this gets implemented, make sure to mark both possibilities as mutually exclusive.
 - Gracefully finishing running scenes when hitting <Ctrl>+C for the first time, hard aborting on hitting it
   the second time. The user can use this to abort long processes early without losing any data.
   Running instances will finish, but no new instances will start in soft exit mode.
 - Use a configuration file to define the default argument values.
+  This requires platform abstraction to determine the default locations for storing configuration files on each platform.
+  The appdirs module seems to be a viable option to solve this issue: https://github.com/ActiveState/appdirs
 - Use a better merge algorithm.
   - The current greedy algorithm solves the problem well, but does not take the scene cut score into account.
   - For example, maximize the overall scene score value.
     Algorithm idea: take the leading scenes (with highest score) and merge previous scenes until
     the permissible time frame is exhausted or a better-scoring scene is found.
+    (worst case for this idea: Descendingly sorted scene scores, which will lead to no merges at all.)
+    
 - Encode validation: Use a simple decode pass to test each encoded scene for bitstream corruption.

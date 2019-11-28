@@ -21,14 +21,27 @@ import av1transcoder.scene_cuts
 import av1transcoder.scene_transcode
 import av1transcoder.logger
 
+logger = av1transcoder.logger.get_logger(__name__.split(".")[-1])
+
 
 def main():
     arguments = av1transcoder.argument_parser.parse_args()
     av1transcoder.logger.configure_root_logger(arguments)
     input_files = av1transcoder.input_file.read_input_files(arguments)
     for input_file in input_files:
-        scenes = av1transcoder.scene_cuts.generate_scene_cuts(arguments, input_file)
-        av1transcoder.scene_transcode.transcode_input_file(arguments, input_file, scenes)
+        if arguments.limit_encodes == 0:
+            # When the encode limit is hit, it does not make sense to try to encode the next input file.
+            # Thus abort early in this case.
+            logger.info("Encoder process limit hit. Do not process any further files.")
+            break
+        if input_file.handle_temp_directory_creation():
+            scenes = av1transcoder.scene_cuts.generate_scene_cuts(arguments, input_file)
+            av1transcoder.scene_transcode.transcode_input_file(arguments, input_file, scenes)
+        else:
+            logger.warning(
+                f'Output or temporary directory creation for input file {input_file.input_file} failed. '
+                f'Skipping this file.'
+            )
 
 
 if __name__ == "__main__": 

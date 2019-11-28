@@ -14,15 +14,17 @@
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 from pathlib import Path
+import re
 import subprocess
 import xml.etree.ElementTree as Et
 
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Set
 
-from av1transcoder.argument_parser import Namespace
+from av1transcoder.argument_parser import Namespace, CropValues
 from av1transcoder.logger import get_logger
 from av1transcoder.ffmpeg_handler import find_ffmpeg
 
+stream_number_re = re.compile(r"scene_(?P<number>[0]|[1-9][0-9]*)\.mkv")
 logger = get_logger(__name__.split(".")[-1])
 
 
@@ -161,22 +163,45 @@ class Stream:
 
 
 class InputFile:
+
+    IN_PROGRESS_TEMP_DIR_NAME = "in_progress_scenes"
+    COMPLETED_TEMP_DIR_NAME = "completed_scenes"
+
     ffprobe_parameter_template = ("ffprobe", "-hide_banner",
                                   "-loglevel", "error",
                                   "-show_chapters",
                                   "-show_streams",
                                   "-print_format", "xml", "--")
 
-    def __init__(self, input_file: Path, arguments: Namespace):
+    def __init__(self, input_file: Path, arguments: Namespace, crop_values: CropValues):
         self.input_file: Path = input_file
+        self.crop_values = crop_values
+
+        self.force_overwrite = arguments.force_overwrite
         self.output_dir: Path = self._determine_output_dir(arguments)
         self.temp_dir: Path = self._determine_temp_dir(arguments)
+        self.in_progress_dir = self.temp_dir / self.IN_PROGRESS_TEMP_DIR_NAME
+        self.completed_dir = self.temp_dir / self.COMPLETED_TEMP_DIR_NAME
+
         self.ffprobe_parameters: List[str] = list(InputFile.ffprobe_parameter_template)
         self.ffprobe_parameters.append(str(self.input_file))
         self.ffmpeg_progs = find_ffmpeg(arguments)
 
+        self.scenes = []
         self.chapters: List[Chapter] = []
         self.video_streams: List[Stream] = []
+
+    @property
+    def all_scenes_completed(self) -> bool:
+        """
+        Looks at the file system to determine if all required scenes are finished encoding.
+        Returns True, if all scenes are present and ready to be concatenated into the final result.
+        Returns False, if any scenes are missing and still require encoding.
+        """
+        file_names = (path.name for path in self.completed_dir.glob("scene_*.mkv"))
+        scene_numbers = set(int(stream_number_re.match(file)["number"]) for file in file_names)
+        required_scenes: Set[int] = set(range(len(self.scenes)))
+        return scene_numbers == required_scenes
 
     def _determine_output_dir(self, arguments: Namespace) -> Path:
         """
@@ -213,6 +238,104 @@ class InputFile:
         )
         return temp_dir
 
+    def handle_temp_directory_creation(self) -> bool:
+        """
+        Handles the creation of the temporary directory and the output directory.
+        Has to be called before any command lines for this file are run().
+        """
+        # Uses lazy evaluation to shortcut later calls if any fails
+        return self._handle_output_directory() and self._handle_temp_directory() and self._handle_temp_subdirectories()
+
+    def _handle_temp_directory(self) -> bool:
+        logger.info(f'Handling temporary directory creation for input file "{self.input_file}": '
+                    f'{self.temp_dir}')
+        if self.temp_dir == self.output_dir:
+            # Shortcutting here, as it is already done.
+            return True
+        if not self.temp_dir.exists():
+            logger.debug("Temporary directory does not exist. Traversing path to the root.")
+            parent = self._traverse_path_until_existing(self.temp_dir)
+            if not parent.is_dir():
+                # The lowest existing ancestor is a file. Try to replace it, if the user allowed this.
+                logger.debug("This ancestor is a file. Try to replace with a directory, if allowed by the user.")
+                if not self._replace_file_with_directory(parent):
+                    return False
+            return self._create_directory("temporary", self.temp_dir)
+        elif self.temp_dir.is_dir():
+            logger.debug(f"Temporary directory exists, doing nothing: {self.temp_dir}")
+            return True
+        else:
+            # Output directory exists, but is a file.
+            logger.debug("The temporary data path exists and is a file. "
+                         "Try to replace it with a directory, if allowed by the user.")
+            return self._replace_file_with_directory(self.temp_dir)
+
+    def _handle_temp_subdirectories(self) -> bool:
+        try:
+            mode = self.temp_dir.stat().st_mode
+            self.completed_dir.mkdir(mode, exist_ok=True)
+            self.in_progress_dir.mkdir(mode, exist_ok=True)
+        except (OSError, FileNotFoundError):
+            return False
+        else:
+            return True
+
+    def _handle_output_directory(self) -> bool:
+        output_dir: Path = self.output_dir
+        logger.info(f'Handling output directory creation for input file "{self.input_file}": {output_dir}')
+        if not output_dir.exists():
+            logger.debug("Output directory does not exist. Traversing path to the root.")
+            # The path ends somewhere above the output directory. Go up the path and check the parents.
+            parent = self._traverse_path_until_existing(output_dir)
+            if not parent.is_dir():
+                # The lowest existing ancestor is a file. Try to replace it, if the user allowed this.
+                logger.debug("The existing ancestor is a file. "
+                             "Try to replace with a directory, if allowed by the user.")
+                if not self._replace_file_with_directory(parent):
+                    return False
+            return self._create_directory("output", output_dir)
+        elif output_dir.is_dir():
+            logger.debug(f"Output directory exists, doing nothing: {output_dir}")
+            return True
+        else:
+            # Output directory exists, but is a file.
+            logger.debug("The output path exists and is a file. "
+                         "Try to replace it with a directory, if allowed by the user.")
+            return self._replace_file_with_directory(output_dir)
+
+    @staticmethod
+    def _traverse_path_until_existing(path: Path) -> Path:
+        while not path.exists():
+            path = path.parent
+        logger.debug(f"Found lowest existing ancestor of requested path: {path}")
+        return path
+
+    @staticmethod
+    def _create_directory(name_for_logging: str, dir_path: Path) -> bool:
+        try:
+            parent_mode = InputFile._traverse_path_until_existing(dir_path).stat().st_mode
+            dir_path.mkdir(parent_mode, parents=True)
+        except OSError:
+            return False
+        else:
+            logger.info(f"Created requested {name_for_logging} directory: {dir_path}")
+            return True
+
+    def _replace_file_with_directory(self, directory: Path) -> bool:
+        if self.force_overwrite:
+            logger.warning(
+                f'Replacing existing file "{directory}" with a directory, '
+                f'because --force-overwrite was given.'
+            )
+            try:
+                _replace_path(directory)
+            except OSError:
+                return False
+            else:
+                return True
+        else:
+            return False
+
     def has_video_data(self) -> bool:
         """
         Returns True, if the input file has video streams.
@@ -223,7 +346,6 @@ class InputFile:
     def has_chapters(self) -> bool:
         """
         Returns True, if the input file has chapter markers.
-        If not, special handling when writing the output will be required.
         :return:
         """
         return bool(self.chapters)
@@ -314,12 +436,12 @@ def read_input_files(arguments: Namespace) -> List[InputFile]:
     """Reads all input files specified on the command line and parses them to InputFile instances."""
     logger.info("Extracting file data for all input files.")
     result: List[InputFile] = list()
-    for input_file in arguments.input_files:
+    for input_file, crop_value in zip(arguments.input_files, arguments.crop_values):
         if not input_file.exists():
             logger.warning(f'The given input file "{input_file}" does not exist. Skipping.')
             continue
         logger.debug(f"Extracting file data for input file: {input_file}")
-        in_file = InputFile(input_file, arguments)
+        in_file = InputFile(input_file, arguments, crop_value)
         in_file.collect_file_data()
         if in_file.has_video_data():
             logger.debug(f'Input file "{input_file}" contains video streams.'
@@ -328,3 +450,11 @@ def read_input_files(arguments: Namespace) -> List[InputFile]:
         else:
             logger.warning(f'Input file "{input_file}" does not contain any video streams: Ignoring this file.')
     return result
+
+
+def _replace_path(output_dir: Path):
+    """
+    Encapsulate filesystem interaction: replace output_dir with a directory.
+    """
+    output_dir.unlink()
+    output_dir.mkdir(output_dir.parent.stat().st_mode)

@@ -30,6 +30,7 @@ from av1transcoder.input_file import InputFile
 from av1transcoder.logger import get_logger
 
 logger = get_logger(__name__.split(".")[-1])
+scene_logger = logger.getChild("Scene")
 OptInt = typing.Optional[int]
 OptFloat = typing.Optional[float]
 
@@ -52,7 +53,7 @@ class SceneCutDetectionCommandLine(AbstractCommandLine):
         super(SceneCutDetectionCommandLine, self).__init__(arguments, input_file)
         logger.info(f'Constructing command line to detect scene cuts in input file "{input_file}"')
         self.raw_timestamps_file_name = "raw_timestamps.txt"
-        self.raw_timestamps_file = self.temp_dir / self.raw_timestamps_file_name
+        self.raw_timestamps_file = self.input_file.temp_dir / self.raw_timestamps_file_name
         self._add_command_line_arguments(arguments)
         if self.dump_mode == "only":
             # The scene cut detection must always run, so overwrite "only" with "yes" in this particular case.
@@ -71,19 +72,20 @@ class SceneCutDetectionCommandLine(AbstractCommandLine):
         # TODO: Check if arbitrary paths are allowed in the filterpath file argument. If not, change the current
         #       working directory to the temporary path to the
 
-        # Prepend the deinterlace filter if deinterlacing is enabled. On interlaced sources, this should improve
-        # the scene cut detection accuracy.
-        deinterlace_filter = "yadif," if arguments.deinterlace else ""  # Comma at string end is intentional
+        # Prepend the deinterlace filter and crop filter if de-interlacing / cropping is enabled.
+        # On interlaced sources, de-interlacing should improve the scene cut detection accuracy.
+        filter_chain = self.get_filter_chain()
+        user_filter = ",".join(filter_chain) + "," if filter_chain else ""
 
-        video_filter = f"{deinterlace_filter}select='gt(scene,{scene_cut_threshold_str})',metadata=print:file=" \
-            f"'{self.in_progress_dir/self.raw_timestamps_file_name}',null"
+        video_filter = f"{user_filter}" \
+                       f"select='gt(scene,{scene_cut_threshold_str})',metadata=print:file=" \
+                       f"'{self.input_file.in_progress_dir/self.raw_timestamps_file_name}',null"
         self.command_line += [
             "-y" if self.force_overwrite else "-n",
             "-i", str(self.input_file.input_file),
-            "-filter_complex",
-            video_filter,
-            "-an", "-vn", "-sn",  # Discard input streams. This is better than encoding them for no reason.
-            "-f", "null", "-"  # Use a null muxer to produce no output file
+            "-vf", video_filter,
+            "-an", "-sn",  # Discard unrelated input streams. This is better than encoding them for no reason.
+            "-f", "null", "-"  # Use the null muxer to produce no output file
         ]
         command_line_str = f"[{', '.join(self.command_line)}]"
         logger.debug(f"Constructed command line. Result: {command_line_str}")
@@ -91,12 +93,31 @@ class SceneCutDetectionCommandLine(AbstractCommandLine):
     def _get_command_dump_file_name(self):
         return "scene_cut_detection_command.txt"
 
+    def _get_output_file_path(self):
+        return self.raw_timestamps_file
+
+    def _move_output_files_to_completed_dir(self):
+        logger.debug(f'Searching completed, move the generated timestamp log to "{self.input_file.temp_dir}".')
+        if self.finished and self.force_overwrite:
+            logger.info("Overwriting finished scene detection data, because --force-overwrite was given.")
+            self._get_output_file_path().unlink()
+        elif self.finished:
+            logger.warning(
+                "Output file already exists, but --force-overwrite non given. This should not have happened! "
+                "Not overwriting the output…"
+            )
+        else:
+            shutil.move(
+                str(self.input_file.in_progress_dir/self.raw_timestamps_file_name),
+                str(self.input_file.temp_dir)
+            )
+
 
 class Scene:
 
     @classmethod
     def factory(cls, timestamp_match: typing.Match, score_match: typing.Match, previous_scene=None):
-        logger.info("Creating Scene from timestamps.")
+        scene_logger.debug("Creating Scene from timestamps.")
         end_pts = int(timestamp_match["pts"])
         end_pts_time = float(timestamp_match["pts_time"])
         end_scene_score = float(score_match["scene_score"])
@@ -117,7 +138,7 @@ class Scene:
             self.scene_number = previous_scene.scene_number + 1
             self.begin_pts = previous_scene.end_pts
             self.begin_pts_time = previous_scene.end_pts_time
-        logger.info(f"Created {self.__class__.__name__} instance: {self}.")
+        scene_logger.debug(f"Created {self.__class__.__name__} instance: {self}.")
 
     @property
     def length_seconds(self) -> OptFloat:
@@ -182,27 +203,19 @@ def generate_scene_cuts(arguments: Namespace, input_file: InputFile) -> SceneLis
     """
     logger.info(f'Searching the input file "{input_file.input_file}" for scene changes.')
     cli = SceneCutDetectionCommandLine(arguments, input_file)
-    if cli.handle_directory_creation():
-        # Check, if the scene cuts are already finished. Only compute them, if they are not yet done.
-        if not cli.raw_timestamps_file.exists():
-            cli.run()
-            logger.debug(f'Searching completed, move the generated timestamp log to "{cli.temp_dir}"".')
-            shutil.move(str(cli.in_progress_dir/cli.raw_timestamps_file_name), str(cli.temp_dir))
-        else:
-            logger.debug("Timestamps already found for the given file, skipping this step.")
-        scenes = parse_raw_timestamps_from_file(cli.raw_timestamps_file)
-        # Dump the parsed raw scenes for examination
-        dump_scenes_to_file(cli.raw_timestamps_file.parent / "parsed_scenes.txt", scenes)
-        # scenes = split_long_scenes(arguments, scenes, input_file)
-        scenes = merge_short_scenes(arguments, scenes)
-        logger.debug("All final scenes:")
-        for scene in scenes:
-            logger.debug(str(scene))
-        # And dump the processed scenes. These will be used to split the input video.
-        dump_scenes_to_file(cli.raw_timestamps_file.parent / "final_processed_scenes.txt", scenes)
-        return scenes
-    else:
-        return []
+    cli.run()
+    scenes = parse_raw_timestamps_from_file(cli.raw_timestamps_file)
+    # Dump the parsed raw scenes for examination
+    dump_scenes_to_file(cli.input_file.temp_dir / "parsed_scenes.txt", scenes)
+    # scenes = split_long_scenes(arguments, scenes, input_file)
+    scenes = merge_short_scenes(arguments, scenes)
+    logger.debug("All final scenes:")
+    for scene in scenes:
+        logger.debug(str(scene))
+    # And dump the processed scenes. These will be used to split the input video.
+    dump_scenes_to_file(cli.input_file.temp_dir / "final_processed_scenes.txt", scenes)
+    input_file.scenes = scenes
+    return scenes
 
 
 def dump_scenes_to_file(filename: Path, scenes: SceneList):
@@ -252,8 +265,7 @@ def merge_short_scenes(arguments: Namespace, scenes: SceneList) -> SceneList:
 
     while scenes:
         next_ = scenes.pop(0)
-        if current.length_seconds < arguments.min_scene_length:
-            logger.debug("The current scene is too short, merging the next…")
+        if current.length_seconds < float(arguments.min_scene_length):
             current.merge_other(next_)
         else:
             current = next_

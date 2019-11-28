@@ -1,3 +1,17 @@
+Version 0.3.0 (28.11.2019)
+
+- New option --limit-encodes NUMBER. Only run up to NUMBER scene encodes in total. If the limit is hit, no new scene
+  encodes will start and the program will exit. All scenes in all input files count towards this limit. Merging into
+  the final output result will not be performed, if this option causes the scene list to be incomplete. For the sake
+  of this option, the two encodes required for a Two-Pass encode of a scene count as one encode towards this limit.
+- New option --crop TOP BOTTOM LEFT RIGHT. Uses the ffmpeg crop filter to trim the given pixels off the video border.
+  Can be given multiple times. If so, each input file gets it’s own crop parameters in the order both are given on the
+  command line. If more input files are given, the last --crop parameters are used for all remaining input videos.
+- Sanitize user input for numbers. Options requiring positive numbers now check that no negative numbers are supplied.
+  The Scene cut threshold now checks that the input is in the range (0, 1].
+- Updated the --help output
+- Updated the default encoder parameters. The default preset is now tuned for high quality SD encodes.
+
 Version 0.2.0 (17.11.2019)
 
 - Split first pass from second pass for two-pass encoding and use a different task scheduler for two-pass encodes.

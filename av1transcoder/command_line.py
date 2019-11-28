@@ -23,7 +23,6 @@ from typing import List
 from av1transcoder.argument_parser import Namespace
 from av1transcoder.logger import get_logger
 from av1transcoder.input_file import InputFile
-from av1transcoder.ffmpeg_handler import find_ffmpeg
 
 logger = get_logger(__name__.split(".")[-1])
 
@@ -31,24 +30,30 @@ logger = get_logger(__name__.split(".")[-1])
 class AbstractCommandLine:
     """Models a command line. This class can be used to construct ffmpeg command lines and later execute them."""
 
-    IN_PROGRESS_TEMP_DIR_NAME = "in_progress_scenes"
-    COMPLETED_TEMP_DIR_NAME = "completed_scenes"
-
     def __init__(self, arguments: Namespace, input_file: InputFile):
-        self.finished = False
         self.input_file: InputFile = input_file
-        self.ffmpeg: str = find_ffmpeg(arguments).ffmpeg
+        self.ffmpeg: str = self.input_file.ffmpeg_progs.ffmpeg
         self.force_overwrite: bool = arguments.force_overwrite
-        self.temp_dir = self.input_file.temp_dir
-        self.in_progress_dir = self.temp_dir / self.IN_PROGRESS_TEMP_DIR_NAME
-        self.completed_dir = self.temp_dir / self.COMPLETED_TEMP_DIR_NAME
-        self.dump_mode = arguments.dump_commands
+        self.deinterlace = arguments.deinterlace
+        self.dump_mode: bool = arguments.dump_commands
         self.command_line: List[str] = [
             self.ffmpeg,
             "-hide_banner",
         ]
         # Add the global parameters, filter out empty elements
         self.command_line += [param for param in arguments.global_parameters.split(" ") if param]
+
+    def _get_crop_filter(self) -> str:
+        """
+        Returns the ffmpeg crop filter using the input_file’s crop parameters.
+        Returns an empty string, if the crop parameters are None.
+        """
+        crop = self.input_file.crop_values
+        if crop is None:
+            return ""
+        else:
+            crop_filter = f"crop=w=in_w-{crop.crop_width}:h=in_h-{crop.crop_height}:x={crop.left}:y={crop.top}"
+            return crop_filter
 
     @abstractmethod
     def _add_command_line_arguments(self, arguments: Namespace):
@@ -59,22 +64,53 @@ class AbstractCommandLine:
         """Returns the file name used to dump the ffmpeg command."""
         pass
 
+    @abstractmethod
+    def _get_output_file_path(self) -> Path:
+        """Returns the output file path. If this file is present, the command line is considered finished."""
+        pass
+
+    @abstractmethod
+    def _move_output_files_to_completed_dir(self):
+        pass
+
+    @property
+    def finished(self):
+        return self._get_output_file_path().exists()
+
+    def get_filter_chain(self):
+        """Returns the filter chain for this encode"""
+        chain = []
+        if self.deinterlace:
+            chain.append("yadif")
+        crop_filter = self._get_crop_filter()
+        if crop_filter:
+            chain.append(crop_filter)
+        return chain
+
     def run(self):
         """
-        Run ffmpeg using the constructed command line. Should only be executed if handle_directory_creation()
-        returned True.
-        Encapsulate the call to aid testing.
+        Does nothing, if the "finished" property is True and --force-overwrite is not given. Otherwise:
+        Executes the custom run_hook(), if any. Then executes ffmpeg using the constructed command line.
+        Then moves the output file(s) to the output directory, if ffmpeg finished successfully.
+        Executed command lines will be dumped to files if --dump-commands is not "no". Execution will be skipped,
+        if dump-commands is "only" and force_execution is False (the default).
         """
-        logger.info(f"Running command line: {self.command_line}")
+        if self.finished and not self.force_overwrite:
+            logger.info(f"Command line already finished and --force-overwrite not given. Skipping: {self.command_line}")
+            return
+        else:
+            logger.info(f"Running command line: {self.command_line}")
         self.run_hook()
         if self.dump_mode != "no":
-            # shlex.join() requires Python 3.8. TODO: Replace, once Python > 3.8 is widespread enough
-            # For now, quote each token individually
+            # Make sure to quote the lines, so that the dumped commands can be safely copy&pasted into the terminal.
+            # Implementation note: shlex.join() requires Python 3.8. For now, quote each token individually.
+            # TODO: Replace, once Python > 3.8 is widespread enough
             cli = ' '.join(map(shlex.quote, self.command_line)) + "\n"
-            # Append to the dump file,  to accumulate all command lines for the respective step.
-            with open(self.temp_dir/self._get_command_dump_file_name(), "a", encoding="utf-8") as dump_file:
+            # Append to the dump file, to accumulate all command lines for the respective step.
+            with open(self.input_file.temp_dir/self._get_command_dump_file_name(), "a", encoding="utf-8") as dump_file:
                 dump_file.write(cli)
 
+        # Run command lines only if dump mode is "yes" or "no".
         if self.dump_mode != "only":
             completed = subprocess.run(self.command_line, executable=self.ffmpeg)
             if completed.returncode:
@@ -82,11 +118,10 @@ class AbstractCommandLine:
                            f'Failing input file: "{self.input_file.input_file}".'
                 logger.warning(warn_msg)
                 print(warn_msg, file=sys.stderr)
+
             else:
-                self.finished = True
-        else:
-            # When only dumping, assume and pretend to have finished without issues.
-            self.finished = True
+                logger.debug(f'ffmpeg executed successfully. Command line finished: {self.command_line}')
+                self._move_output_files_to_completed_dir()
 
     def run_hook(self):
         """
@@ -94,89 +129,6 @@ class AbstractCommandLine:
         processing is needed before running ffmpeg.
         """
         pass
-
-    def handle_directory_creation(self) -> bool:
-        """
-        Handles the creation of the temporary directory and the output directory.
-        Has to be called before run().
-        """
-        # Uses lazy evaluation to shortcut later calls if any fails
-        return self._handle_output_directory() and self._handle_temp_directory() and self._handle_temp_subdirectories()
-
-    def _handle_temp_directory(self) -> bool:
-        logger.info(f'Handling temporary directory creation for input file "{self.input_file.input_file}": '
-                    f'{self.temp_dir}')
-        if self.temp_dir == self.input_file.output_dir:
-            # Shortcutting here, as it will be handled by self._handle_output_directory()
-            return True
-        if not self.temp_dir.exists():
-            logger.debug("Temporary directory does not exist. Traversing path to the root.")
-            parent = self._traverse_path_until_existing(self.temp_dir)
-            if not parent.is_dir():
-                # The lowest existing ancestor is a file. Try to replace it, if the user allowed this.
-                logger.debug("This ancestor is a file. Try to replace with a directory, if allowed by the user.")
-                if not self._replace_file_with_directory(parent):
-                    return False
-            return self._create_directory("temporary", self.temp_dir)
-        elif self.temp_dir.is_dir():
-            logger.debug(f"Temporary directory exists, doing nothing: {self.temp_dir}")
-            return True
-        else:
-            # Output directory exists, but is a file.
-            logger.debug("The temporary data path exists and is a file. "
-                         "Try to replace it with a directory, if allowed by the user.")
-            return self._replace_file_with_directory(self.temp_dir)
-
-    def _handle_temp_subdirectories(self) -> bool:
-        try:
-            mode = self.temp_dir.stat().st_mode
-            self.completed_dir.mkdir(mode, exist_ok=True)
-            self.in_progress_dir.mkdir(mode, exist_ok=True)
-        except (OSError, FileNotFoundError):
-            return False
-        else:
-            return True
-
-    def _handle_output_directory(self) -> bool:
-        output_dir: Path = self.input_file.output_dir
-        logger.info(f'Handling output directory creation for input file "{self.input_file.input_file}": {output_dir}')
-        if not output_dir.exists():
-            logger.debug("Output directory does not exist. Traversing path to the root.")
-            # The path ends somewhere above the output directory. Go up the path and check the parents.
-            parent = self._traverse_path_until_existing(output_dir)
-            if not parent.is_dir():
-                # The lowest existing ancestor is a file. Try to replace it, if the user allowed this.
-                logger.debug("The existing ancestor is a file. "
-                             "Try to replace with a directory, if allowed by the user.")
-                if not self._replace_file_with_directory(parent):
-                    return False
-            return self._create_directory("output", output_dir)
-        elif output_dir.is_dir():
-            logger.debug(f"Output directory exists, doing nothing: {output_dir}")
-            return True
-        else:
-            # Output directory exists, but is a file.
-            logger.debug("The output path exists and is a file. "
-                         "Try to replace it with a directory, if allowed by the user.")
-            return self._replace_file_with_directory(output_dir)
-
-    @staticmethod
-    def _traverse_path_until_existing(path: Path) -> Path:
-        while not path.exists():
-            path = path.parent
-        logger.debug(f"Found lowest existing ancestor of requested path: {path}")
-        return path
-
-    @staticmethod
-    def _create_directory(name_for_logging: str, dir_path: Path) -> bool:
-        try:
-            parent_mode = AbstractCommandLine._traverse_path_until_existing(dir_path).stat().st_mode
-            dir_path.mkdir(parent_mode, parents=True)
-        except OSError:
-            return False
-        else:
-            logger.info(f"Created requested {name_for_logging} directory: {dir_path}")
-            return True
 
     @staticmethod
     def _float_str(number: float) -> str:
@@ -189,28 +141,5 @@ class AbstractCommandLine:
         """
         return f"{number:0.9f}".rstrip("0").rstrip(".")
 
-    def _replace_file_with_directory(self, directory: Path) -> bool:
-        if self.force_overwrite:
-            logger.warning(
-                f'Replacing existing file "{directory}" with a directory, '
-                f'because --force-overwrite was given.'
-            )
-            try:
-                _replace_path(directory)
-            except OSError:
-                return False
-            else:
-                return True
-        else:
-            return False
-
     def __str__(self) -> str:
         return str(self.command_line)
-
-
-def _replace_path(output_dir: Path):
-    """
-    Encapsulate filesystem interaction: replace output_dir with a directory.
-    """
-    output_dir.unlink()
-    output_dir.mkdir(output_dir.parent.stat().st_mode)

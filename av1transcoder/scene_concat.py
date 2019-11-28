@@ -36,7 +36,6 @@ class ConcatFilterCommandLine(AbstractCommandLine):
         logger.info(f"Created {self.__class__.__name__} instance.")
 
     def _add_command_line_arguments(self, arguments: Namespace):
-        self.output_file_path = self.input_file.output_dir / f"{self.input_file.input_file.stem}.AV1.mkv"
 
         # “The -safe 0 […] is not required if the paths are relative.” See https://trac.ffmpeg.org/wiki/Concatenate
         self.command_line += [
@@ -45,7 +44,7 @@ class ConcatFilterCommandLine(AbstractCommandLine):
             "-safe", "0",  # Required, because the scene listing contains absolute paths. See comment above
             "-i", str(self.scene_listing),
             "-c", "copy",
-            str(self.output_file_path)
+            str(self._get_output_file_path())
         ]
         command_line_str = f"[{', '.join(self.command_line)}]"
         logger.debug(f"Constructed command line. Result: {command_line_str}")
@@ -56,13 +55,20 @@ class ConcatFilterCommandLine(AbstractCommandLine):
         See https://trac.ffmpeg.org/wiki/Concatenate#demuxer
         """
         logger.debug("Running run_hook(), generating the file listing for the concat muxer.")
-        scenes = map(Path, natural_sorted(map(str, self.completed_dir.glob("scene_*.mkv"))))
+        scenes = map(Path, natural_sorted(map(str, self.input_file.completed_dir.glob("scene_*.mkv"))))
         file_listing = "\n".join(f"file '{file.resolve()}'" for file in scenes)
         self.scene_listing.write_text(file_listing, encoding="utf-8")
 
     @property
     def scene_listing(self) -> Path:
-        return self.temp_dir/"scene_list.txt"
+        return self.input_file.temp_dir/"scene_list.txt"
 
     def _get_command_dump_file_name(self):
         return "merge_encoded_scenes_command.txt"
+
+    def _get_output_file_path(self):
+        return self.input_file.output_dir / f"{self.input_file.input_file.stem}.AV1.mkv"
+
+    def _move_output_files_to_completed_dir(self):
+        # This does not write to the temp dir, so it is unneeded to anything here.
+        pass
