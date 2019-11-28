@@ -22,6 +22,7 @@ from abc import abstractmethod
 import itertools
 from concurrent.futures import ThreadPoolExecutor
 import os
+import pathlib
 import shutil
 
 from av1transcoder.argument_parser import Namespace
@@ -62,6 +63,10 @@ class AbstractEncoderCommandLine(AbstractCommandLine):
         ]
         # Add the custom encoder parameters, filtering out empty elements
         self.command_line += [param for param in arguments.encoder_parameters.split(" ") if param]
+
+    @property
+    def two_pass_log_file_prefix(self) -> pathlib.Path:
+        return self.completed_dir/f"scene_{self.scene.scene_number}"
 
 
 class AV1LibAomSinglePassEncoderCommandLine(AbstractEncoderCommandLine):
@@ -117,7 +122,7 @@ class AV1LibAomTwoPass1EncoderCommandLine(AbstractEncoderCommandLine):
         self.command_line += [
             "-pass", "1",
             # TODO: Verify that this works with arbitrary paths
-            "-passlogfile", str(self.in_progress_dir/f"scene_{self.scene.scene_number}"),
+            "-passlogfile", str(self.two_pass_log_file_prefix),
             "-f", "matroska",
             os.devnull
         ]
@@ -154,7 +159,7 @@ class AV1LibAomTwoPass2EncoderCommandLine(AbstractEncoderCommandLine):
         self.command_line += [
             "-pass", "2",
             # TODO: Verify that this works with arbitrary paths
-            "-passlogfile", str(self.in_progress_dir/f"scene_{self.scene.scene_number}"),
+            "-passlogfile", str(self.two_pass_log_file_prefix),
             str(self.in_progress_dir / scene_name)
         ]
         command_line_str = f"[{', '.join(self.command_line)}]"
@@ -203,6 +208,7 @@ def _transcode_two_pass(arguments: Namespace, input_file: InputFile, scene: Scen
     if pass1.handle_directory_creation():
         logger.debug(f'Starting first pass for file "{input_file.input_file}".')
         pass1.run()
+        _move_first_pass_log_to_finished_directory(pass1)
     pass2 = AV1LibAomTwoPass2EncoderCommandLine(arguments, input_file, scene)
     if pass2.handle_directory_creation() and pass1.finished:
         logger.debug(f'Starting second pass for file "{input_file.input_file}".')
@@ -214,7 +220,19 @@ def _move_scene_to_finished_directory(cli: AbstractEncoderCommandLine):
     if cli.finished and cli.dump_mode != "only":
         encoded_scene = cli.in_progress_dir / f"scene_{cli.scene.scene_number}.mkv"
         shutil.move(str(encoded_scene), str(cli.completed_dir))
-        logger.debug(f'Encoded scene "{encoded_scene}" finished. Moved to the completed directory "{cli.completed_dir}"')
+        logger.debug(f'Encoded scene "{encoded_scene}" finished. '
+                     f'Moved to the completed directory "{cli.completed_dir}"')
+
+
+def _move_first_pass_log_to_finished_directory(cli: AV1LibAomTwoPass1EncoderCommandLine):
+    if cli.finished and cli.dump_mode != "only":
+        # May have produced multiple logs, if the file contains multiple video tracks.
+        logs = cli.in_progress_dir.glob(f"{cli.two_pass_log_file_prefix.name}*.log")
+
+        for log_file in logs:
+            shutil.move(str(log_file), cli.completed_dir)
+        logger.debug(f'Moved {len(logs)} log file{"s" if len(logs) >= 1 else ""} '
+                     f'for scene {cli.scene.scene_number} to the completed directory "{cli.completed_dir}".')
 
 
 def _cleanup(arguments: Namespace, input_file: InputFile):

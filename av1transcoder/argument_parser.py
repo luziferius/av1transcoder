@@ -66,8 +66,14 @@ def generate_argument_parser() -> ArgumentParser:
              "The output files will only contain video tracks. You have to add back other tracks yourself, " \
              "like audio or subtitles, and mux them into the container of your choice. " \
              "Files with multiple video tracks are untested and probably won’t work. Filenames that contain esoteric " \
-             "characters like newlines will probably break the ffmpeg concat demuxer and will likely cause failures."
-    parser = ArgumentParser(description=description, epilog=epilog)
+             "characters like newlines will probably break the ffmpeg concat demuxer and will likely cause failures. " \
+             "\nLong arguments can be abbreviated, as long as the abbreviation is unambiguous. Don’t use this feature " \
+             "in scripts, because new argument switches might break previously valid abbreviations. Arguments can " \
+             "be loaded from files using the @-Notation. Use \"@/path/to/file\" to load arguments from the specified " \
+             "file. The file must contain one argument per line. It may be useful to load a set of common arguments" \
+             " from a file instead of typing them out on the command line, " \
+             "when you can re-use the same set of arguments multiple times."
+    parser = ArgumentParser(description=description, fromfile_prefix_chars="@", epilog=epilog)
     parser.add_argument(
         "input_files", action="store", type=Path, metavar="input_file", nargs="+",
         help="Input video files. All given video files will be transcoded to AV1."

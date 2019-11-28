@@ -1,9 +1,18 @@
+Version 0.1.2 (17.11.2019)
+
+- Gracefully handle missing input files
+- Enable @-notation in the argument parser to load arguments from files
+- Move first pass encoder logs to the completed temporary directory, so that completed first passes can be skipped.
+
+
 Version 0.1.1 (16.11.2019)
+
 - Replaced -2/--two-pass with -1/--single-pass. Two-Pass encoding is the new default.
 - Per default, use 8 concurrent encodes instead of 2
 - Removed tile usage from the default encoder parameters, due to possible frame curruptions
 - Removed threading support from the default encoder parameters,
   because multiple encoder instances scale more consistently.
+
 
 Version 0.1.0 (12.11.2019)
 

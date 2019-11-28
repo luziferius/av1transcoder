@@ -315,9 +315,11 @@ def read_input_files(arguments: Namespace) -> List[InputFile]:
     logger.info("Extracting file data for all input files.")
     result: List[InputFile] = list()
     for input_file in arguments.input_files:
+        if not input_file.exists():
+            logger.warning(f'The given input file "{input_file}" does not exist. Skipping.')
+            continue
         logger.debug(f"Extracting file data for input file: {input_file}")
-        input_file_path = Path(input_file)
-        in_file = InputFile(input_file_path, arguments)
+        in_file = InputFile(input_file, arguments)
         in_file.collect_file_data()
         if in_file.has_video_data():
             logger.debug(f'Input file "{input_file}" contains video streams.'
