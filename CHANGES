@@ -1,3 +1,10 @@
+Version 0.1.3 (17.11.2019)
+
+- Fixed broken Two-pass log file moving.
+- Fixed skipping the first pass of two-pass encodes, if that is already finished.
+- Always overwrite aborted single-pass or second-pass encodes.
+
+
 Version 0.1.2 (17.11.2019)
 
 - Gracefully handle missing input files

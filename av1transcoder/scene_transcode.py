@@ -22,7 +22,6 @@ from abc import abstractmethod
 import itertools
 from concurrent.futures import ThreadPoolExecutor
 import os
-import pathlib
 import shutil
 
 from av1transcoder.argument_parser import Namespace
@@ -41,9 +40,15 @@ class AbstractEncoderCommandLine(AbstractCommandLine):
         super(AbstractEncoderCommandLine, self).__init__(arguments, input_file)
         self.scene = scene
 
-    @abstractmethod
     def _add_command_line_arguments(self, arguments: Namespace):
-        pass
+        # Always overwrite for encoding passes.
+        # The two-pass first pass requires -y to write to /dev/null or NUL
+        # The single-pass and two-pass second pass write to self.in_progress_temp, which is always safe to write to.
+        # Completed files are moved out of it on completion, so if files are present, it indicates that a previous
+        # instance aborted. So it is safe to overwrite partial data. (There is a millisecond wide time frame
+        # between finishing an encoding and moving the finished file. I’ll ignore that terminating this program during
+        # that time frame _might_ cause overwriting and re-doing a single finished scene.)
+        self.command_line.append("-y")
 
     def _add_common_encoder_options(self, arguments: Namespace):
         """
@@ -65,8 +70,13 @@ class AbstractEncoderCommandLine(AbstractCommandLine):
         self.command_line += [param for param in arguments.encoder_parameters.split(" ") if param]
 
     @property
-    def two_pass_log_file_prefix(self) -> pathlib.Path:
-        return self.completed_dir/f"scene_{self.scene.scene_number}"
+    def two_pass_log_file_prefix(self) -> str:
+        return f"scene_{self.scene.scene_number}"
+
+    @abstractmethod
+    def _get_command_dump_file_name(self) -> str:
+        """Returns the file name used to dump the ffmpeg command."""
+        pass
 
 
 class AV1LibAomSinglePassEncoderCommandLine(AbstractEncoderCommandLine):
@@ -82,9 +92,7 @@ class AV1LibAomSinglePassEncoderCommandLine(AbstractEncoderCommandLine):
         logger.info(f"Created {self.__class__.__name__} instance.")
 
     def _add_command_line_arguments(self, arguments: Namespace):
-        self.command_line += [
-            "-y" if self.force_overwrite else "-n",
-        ]
+        super(AV1LibAomSinglePassEncoderCommandLine, self)._add_command_line_arguments(arguments)
         self._add_common_encoder_options(arguments)
         # Now add the output file
 
@@ -111,9 +119,7 @@ class AV1LibAomTwoPass1EncoderCommandLine(AbstractEncoderCommandLine):
         logger.info(f"Created {self.__class__.__name__} instance.")
 
     def _add_command_line_arguments(self, arguments: Namespace):
-        self.command_line += [
-            "-y",  # Always yes to overwrite /dev/null or NUL
-        ]
+        super(AV1LibAomTwoPass1EncoderCommandLine, self)._add_command_line_arguments(arguments)
         self._add_common_encoder_options(arguments)
         # See Two-Pass section of https://trac.ffmpeg.org/wiki/Encode/AV1
         # Specify the muxer and pipe the output to the system null sink.
@@ -122,7 +128,7 @@ class AV1LibAomTwoPass1EncoderCommandLine(AbstractEncoderCommandLine):
         self.command_line += [
             "-pass", "1",
             # TODO: Verify that this works with arbitrary paths
-            "-passlogfile", str(self.two_pass_log_file_prefix),
+            "-passlogfile", str(self.in_progress_dir/self.two_pass_log_file_prefix),
             "-f", "matroska",
             os.devnull
         ]
@@ -147,9 +153,7 @@ class AV1LibAomTwoPass2EncoderCommandLine(AbstractEncoderCommandLine):
         logger.info(f"Created {self.__class__.__name__} instance.")
 
     def _add_command_line_arguments(self, arguments: Namespace):
-        self.command_line += [
-            "-y" if self.force_overwrite else "-n",
-        ]
+        super(AV1LibAomTwoPass2EncoderCommandLine, self)._add_command_line_arguments(arguments)
         self._add_common_encoder_options(arguments)
 
         scene_name = f"scene_{self.scene.scene_number}.mkv"
@@ -159,7 +163,7 @@ class AV1LibAomTwoPass2EncoderCommandLine(AbstractEncoderCommandLine):
         self.command_line += [
             "-pass", "2",
             # TODO: Verify that this works with arbitrary paths
-            "-passlogfile", str(self.two_pass_log_file_prefix),
+            "-passlogfile", str(self.completed_dir/self.two_pass_log_file_prefix),
             str(self.in_progress_dir / scene_name)
         ]
         command_line_str = f"[{', '.join(self.command_line)}]"
@@ -206,9 +210,13 @@ def _transcode_two_pass(arguments: Namespace, input_file: InputFile, scene: Scen
         logger.info(f"Scene number {pass1.scene.scene_number} already finished. Skipping.")
         return
     if pass1.handle_directory_creation():
-        logger.debug(f'Starting first pass for file "{input_file.input_file}".')
-        pass1.run()
-        _move_first_pass_log_to_finished_directory(pass1)
+        if arguments.force_overwrite or not \
+                list(pass1.completed_dir.glob(f"{pass1.two_pass_log_file_prefix}*.log")):  # Finished log files exist
+            logger.debug(f'Starting first pass for file "{input_file.input_file}".')
+            pass1.run()
+            _move_first_pass_log_to_finished_directory(pass1)
+        else:
+            pass1.finished = True
     pass2 = AV1LibAomTwoPass2EncoderCommandLine(arguments, input_file, scene)
     if pass2.handle_directory_creation() and pass1.finished:
         logger.debug(f'Starting second pass for file "{input_file.input_file}".')
@@ -227,11 +235,16 @@ def _move_scene_to_finished_directory(cli: AbstractEncoderCommandLine):
 def _move_first_pass_log_to_finished_directory(cli: AV1LibAomTwoPass1EncoderCommandLine):
     if cli.finished and cli.dump_mode != "only":
         # May have produced multiple logs, if the file contains multiple video tracks.
-        logs = cli.in_progress_dir.glob(f"{cli.two_pass_log_file_prefix.name}*.log")
-
+        logs = cli.in_progress_dir.glob(f"{cli.two_pass_log_file_prefix}*.log")
+        log_count = 0
         for log_file in logs:
+            target_file = cli.completed_dir/log_file.name
+            if cli.force_overwrite and target_file.exists():
+                logger.info(f'Log file already present: "{target_file}". Force overwriting the file.')
+                target_file.unlink()
             shutil.move(str(log_file), cli.completed_dir)
-        logger.debug(f'Moved {len(logs)} log file{"s" if len(logs) >= 1 else ""} '
+            log_count += 1
+        logger.debug(f'Moved {log_count} log file{"s" if log_count >= 1 else ""} '
                      f'for scene {cli.scene.scene_number} to the completed directory "{cli.completed_dir}".')
 
 
