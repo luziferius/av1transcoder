@@ -217,9 +217,7 @@ def _generate_argument_parser() -> ArgumentParser:
     )
     parser.add_argument(
         "-c", "--max-concurrent-encodes", action="store", type=PositiveInt, default=8,
-        help="Run up to this many ffmpeg instances in parallel. As of writing this, libaom-av1 is bad at scaling "
-             "horizontally, so encode this many video scenes independently and parallel to increase system load and "
-             "decrease encoding time. Defaults to %(default)i"
+        help="Run up to this many ffmpeg instances in parallel. Takes a positive integer, defaults to %(default)i"
     )
     parser.add_argument(
         "--dump-commands", action="store", choices=["yes", "no", "only"], default="no",
@@ -232,7 +230,10 @@ def _generate_argument_parser() -> ArgumentParser:
     )
     parser.add_argument(
         "--deinterlace", action="store_true",
-        help="Deinterlace the interlaced input video using the yadif video filter."
+        help="Deinterlace the interlaced input video using the yadif video filter. BEWARE: "
+             "This uses an ffmpeg video filter, thus is incompatible with additional custom video filters given using "
+             "--encoder-parameters. If you use custom video filters, add the de-interlace filter to your filter chain "
+             "instead of using this option."
     )
     parser.add_argument(
         "-L", "--limit-encodes", action="store", metavar="NUMBER", type=PositiveInt,

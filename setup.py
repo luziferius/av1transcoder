@@ -8,7 +8,7 @@ from setuptools import setup, find_packages
 
 project_name = "av1transcoder"
 script_file = "{project_name}/constants.py".format(project_name=project_name)
-description = "Setuptools setup.py for av1transcoder."
+description = "Transcode video files to the AV1 format using ffmpeg and libaom-av1."
 
 with open(script_file, "r", encoding="utf-8") as opened_script_file:
     version = re.search(
@@ -37,7 +37,7 @@ setup(
     long_description=long_description,
     author="Thomas Hess",
     author_email="thomas.hess@udo.edu",
-    # url="http://Project.url.here",
+    url="https://github.com/luziferius/av1transcoder",
     license="GPL v3+",
     # list of classifiers: https://pypi.python.org/pypi?%3Aaction=list_classifiers
     classifiers=[

@@ -1,3 +1,8 @@
+Version 0.3.2 (28.11.2019)
+
+- Prepare public release
+- Improved README, --help output.
+
 Version 0.3.0 (28.11.2019)
 
 - New option --limit-encodes NUMBER. Only run up to NUMBER scene encodes in total. If the limit is hit, no new scene
