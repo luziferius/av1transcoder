@@ -174,7 +174,7 @@ class InputFile:
                                   "-print_format", "xml", "--")
 
     def __init__(self, input_file: Path, arguments: Namespace, crop_values: CropValues):
-        self.input_file: Path = input_file
+        self.input_file: Path = input_file.absolute().resolve()
         self.crop_values = crop_values
 
         self.force_overwrite = arguments.force_overwrite
@@ -209,8 +209,9 @@ class InputFile:
         :return: Path object to the output directory
         """
         if arguments.output_dir is not None:
-            output_dir = arguments.output_dir
+            output_dir = arguments.output_dir.absolute().resolve()
         else:
+            # The input file path is already absolute and resolved.
             output_dir: Path = self.input_file.parent
 
         logger.info(
@@ -225,13 +226,14 @@ class InputFile:
         :return: Path object to the temporary data directory
         """
         if arguments.temp_dir is not None:
-            temp_dir_parent = arguments.temp_dir
+            temp_dir_parent = arguments.temp_dir.absolute().resolve()
         elif arguments.output_dir is not None:
-            temp_dir_parent = arguments.output_dir
+            temp_dir_parent = arguments.output_dir.absolute().resolve()
         else:
+            # The input file path is already absolute and resolved.
             temp_dir_parent: Path = self.input_file.parent
-        # Each input file should have it’s own directory to not clutter the system and cause issues with collisions
-        temp_dir = temp_dir_parent / f"{self.input_file.name}.temp"
+
+        temp_dir = (temp_dir_parent / f"{self.input_file.name}.temp")
 
         logger.info(
             f'Determined temporary directory for input file "{self.input_file}". Data will be written to "{temp_dir}"'

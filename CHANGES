@@ -1,3 +1,10 @@
+Version 0.4.0 (04.12.2019)
+
+- Fixed issue with deleting temporary files at the end of the encoding process
+- Write encoder parameters to the matroska container using a custom metadata tag.
+  The full encoder settings string is written to the VIDEO_ENCODER_SETTINGS tag.
+  This should make it easier to determine the used encoder parameters in the future.
+
 Version 0.3.2 (28.11.2019)
 
 - Prepare public release

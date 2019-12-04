@@ -36,14 +36,14 @@ class ConcatFilterCommandLine(AbstractCommandLine):
         logger.info(f"Created {self.__class__.__name__} instance.")
 
     def _add_command_line_arguments(self, arguments: Namespace):
-
         # “The -safe 0 […] is not required if the paths are relative.” See https://trac.ffmpeg.org/wiki/Concatenate
         self.command_line += [
             "-y" if self.force_overwrite else "-n",
             "-f", "concat",
-            "-safe", "0",  # Required, because the scene listing contains absolute paths. See comment above
+            "-safe", "0",  # Seems to be required, because the scene listing contains absolute paths. See comment above
             "-i", str(self.scene_listing),
             "-c", "copy",
+            "-metadata", f"video_encoder_settings={arguments.encoder_parameters}",
             str(self._get_output_file_path())
         ]
         command_line_str = f"[{', '.join(self.command_line)}]"
@@ -55,8 +55,13 @@ class ConcatFilterCommandLine(AbstractCommandLine):
         See https://trac.ffmpeg.org/wiki/Concatenate#demuxer
         """
         logger.debug("Running run_hook(), generating the file listing for the concat muxer.")
-        scenes = map(Path, natural_sorted(map(str, self.input_file.completed_dir.glob("scene_*.mkv"))))
-        file_listing = "\n".join(f"file '{file.resolve()}'" for file in scenes)
+        # Have to convert all paths to str, to be able to sort them. Use natural sorting so that scene_1 < scene_11.
+        # Additionally, make sure to resolve all paths, so that the listing is independent of the current working dir.
+        scene_paths = map(str, (file.resolve() for file in self.input_file.completed_dir.glob("scene_*.mkv")))
+        scenes = natural_sorted(scene_paths)
+        # TODO: Sanitize the file paths. What if the path contains single quotation marks (') or \n? That’ll break the
+        #       file listing format.
+        file_listing = "\n".join(f"file '{file}'" for file in scenes)
         self.scene_listing.write_text(file_listing, encoding="utf-8")
 
     @property

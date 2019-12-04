@@ -398,7 +398,7 @@ def _create_two_pass_2_command_lines(
 def _cleanup(arguments: Namespace, input_file: InputFile):
     if not arguments.keep_temp:
         logger.info(f'Removing temporary files: "{input_file.temp_dir}"')
-        input_file.temp_dir.unlink()
+        shutil.rmtree(input_file.temp_dir)
 
 
 def _sorted_first_passes(passes):
