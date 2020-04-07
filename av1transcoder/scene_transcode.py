@@ -224,7 +224,7 @@ class AV1LibAomTwoPass2EncoderCommandLine(AbstractEncoderCommandLine):
 
 
 CliType = typing.TypeVar(
-    "T",
+    "CliType",
     AV1LibAomTwoPass1EncoderCommandLine,
     AV1LibAomTwoPass2EncoderCommandLine,
     AV1LibAomSinglePassEncoderCommandLine

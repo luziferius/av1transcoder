@@ -219,14 +219,14 @@ def generate_scene_cuts(arguments: Namespace, input_file: InputFile) -> SceneLis
 
 
 def dump_scenes_to_file(filename: Path, scenes: SceneList):
-    with open(filename, "w", encoding="utf-8") as scenes_file:
+    with filename.open("w", encoding="utf-8") as scenes_file:
         scenes_file.writelines(f"{scene}\n" for scene in map(str, scenes))
 
 
 def parse_raw_timestamps_from_file(raw_timestamps_path: Path) -> SceneList:
     scenes: SceneList = []
     logger.info("Parsing the raw timestamps into Scenes.")
-    with open(raw_timestamps_path, "r") as raw_timestamps:
+    with raw_timestamps_path.open("r") as raw_timestamps:
         line_pairs = zip(*([raw_timestamps]*2))
         for timestamp_line, score_line in line_pairs:
             timestamp_match = timestamp_matcher_re.match(timestamp_line)

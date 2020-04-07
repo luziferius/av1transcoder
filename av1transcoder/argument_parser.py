@@ -297,8 +297,9 @@ def parse_args() -> Namespace:
     # at least an empty list, therefore this list comprehension always works.
     crop_values = [CropValues(*values) for values in args.crop_values]
     if crop_values:
-        # The last crop value is repeated and re-used for all input files
-        args.crop_values: Iterable[CropValues] = itertools.chain(
+        # The last crop value is repeated and re-used for all input files.
+        # This is an infinite iterator, which is meant to be used inside a zip()
+        args.crop_values = itertools.chain(
             crop_values, itertools.repeat(crop_values[-1])
         )
     else:

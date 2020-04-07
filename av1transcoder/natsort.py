@@ -38,8 +38,8 @@ def alphanum_key(s):
     return [try_convert_int(c) for c in _REG_EXP.split(s)]
 
 
-def natural_sorted(l: typing.Iterable[str], reverse: bool=False):
+def natural_sorted(input_list: typing.Iterable[str], reverse: bool = False):
     """
     Sort the given list in the way that humans expect.
     """
-    return sorted(l, key=alphanum_key, reverse=reverse)
+    return sorted(input_list, key=alphanum_key, reverse=reverse)

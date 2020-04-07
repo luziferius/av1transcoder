@@ -35,7 +35,7 @@ class AbstractCommandLine:
         self.ffmpeg: str = self.input_file.ffmpeg_progs.ffmpeg
         self.force_overwrite: bool = arguments.force_overwrite
         self.deinterlace = arguments.deinterlace
-        self.dump_mode: bool = arguments.dump_commands
+        self.dump_mode: str = arguments.dump_commands
         self.command_line: List[str] = [
             self.ffmpeg,
             "-hide_banner",
@@ -107,7 +107,8 @@ class AbstractCommandLine:
             # TODO: Replace, once Python > 3.8 is widespread enough
             cli = ' '.join(map(shlex.quote, self.command_line)) + "\n"
             # Append to the dump file, to accumulate all command lines for the respective step.
-            with open(self.input_file.temp_dir/self._get_command_dump_file_name(), "a", encoding="utf-8") as dump_file:
+            dump_file_path = self.input_file.temp_dir/self._get_command_dump_file_name()
+            with dump_file_path.open("a", encoding="utf-8") as dump_file:
                 dump_file.write(cli)
 
         # Run command lines only if dump mode is "yes" or "no".
