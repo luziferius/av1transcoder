@@ -22,6 +22,7 @@ from abc import abstractmethod
 from concurrent.futures import ThreadPoolExecutor
 import os
 import pathlib
+import shlex
 import shutil
 import typing
 
@@ -74,8 +75,8 @@ class AbstractEncoderCommandLine(AbstractCommandLine):
             "-c:v", "libaom-av1",
             "-strict", "experimental",  # Currently required by ffmpeg. TODO: Remove this when AV1 is marked stable
         ]
-        # Add the custom encoder parameters, filtering out empty elements
-        self.command_line += [param for param in arguments.encoder_parameters.split(" ") if param]
+        # Add the custom encoder parameters, using shlex to properly parse quoted strings
+        self.command_line += shlex.split(arguments.encoder_parameters)
 
     @property
     def two_pass_log_file_prefix(self) -> str:
@@ -105,7 +106,6 @@ class AV1LibAomSinglePassEncoderCommandLine(AbstractEncoderCommandLine):
     """
     This class implements the generation of command line arguments suitable to encode a video to AV1 using a single
     pass encode.
-    It uses libaom-av1 internally to encode the given video to AV1
     """
     def __init__(self, arguments: Namespace, input_file: InputFile, scene: Scene):
         super(AV1LibAomSinglePassEncoderCommandLine, self).__init__(arguments, input_file, scene)
@@ -132,9 +132,6 @@ class AV1LibAomTwoPass1EncoderCommandLine(AbstractEncoderCommandLine):
     """
     This class implements the generation of command line arguments suitable to encode a video to AV1 using a two pass
     encode. This implements the first pass.
-    It uses libaom-av1 internally to encode the given video to AV1
-    # TODO: The log writing probably requires changing the working directory to the temporary dir.
-    # TODO: Convert all input paths to absolute paths, so that nothing depends on the CWD.
     """
     def __init__(self, arguments: Namespace, input_file: InputFile, scene: Scene):
         super(AV1LibAomTwoPass1EncoderCommandLine, self).__init__(arguments, input_file, scene)
@@ -192,7 +189,6 @@ class AV1LibAomTwoPass2EncoderCommandLine(AbstractEncoderCommandLine):
     """
     This class implements the generation of command line arguments suitable to encode a video to AV1 using a two pass
     encode. This implements the second pass.
-    It uses libaom-av1 internally to encode the given video to AV1
     """
     def __init__(self, arguments: Namespace, input_file: InputFile, scene: Scene):
         super(AV1LibAomTwoPass2EncoderCommandLine, self).__init__(arguments, input_file, scene)

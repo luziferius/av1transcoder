@@ -40,8 +40,8 @@ class AbstractCommandLine:
             self.ffmpeg,
             "-hide_banner",
         ]
-        # Add the global parameters, filter out empty elements
-        self.command_line += [param for param in arguments.global_parameters.split(" ") if param]
+        # Add the global parameters before the input file, using shlex to properly parse quoted strings
+        self.command_line += shlex.split(arguments.global_parameters)
 
     def _get_crop_filter(self) -> str:
         """
