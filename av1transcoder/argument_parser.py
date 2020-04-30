@@ -30,7 +30,7 @@ __all__ = [
 # These classes derived from built-in types directly encode semantic restrictions in the type system.
 
 class NonNegativeInt(int):
-    """Used for pixel crop values. Only positive integers are allowed."""
+    """Used for pixel crop values. Only positive integers and zero are allowed."""
     def __new__(cls, *args, **kwargs):
         new: NonNegativeInt = super(NonNegativeInt, cls).__new__(cls, *args, **kwargs)
         if new < 0:
@@ -39,7 +39,7 @@ class NonNegativeInt(int):
 
 
 class PositiveInt(int):
-    """Used for scene cut lengths and limiting various values. Negative numbers and are forbidden."""
+    """Used for scene cut lengths and limiting various values. Negative numbers and zero are forbidden."""
     def __new__(cls, *args, **kwargs):
         new: PositiveInt = super(PositiveInt, cls).__new__(cls, *args, **kwargs)
         if new <= 0:
@@ -157,12 +157,12 @@ def _generate_argument_parser() -> ArgumentParser:
              "are skipped. If set, existing files will be overwritten."
     )
     parser.add_argument(
-        "-s", "--scene-cut-threshold", action="store", type=NormalizedFloat, default=0.3,
+        "-s", "--scene-cut-threshold", action="store", type=NormalizedFloat, default=NormalizedFloat(0.3),
         help="Define the threshold value for the scene cut detection filter. "
              "Accepts a decimal number in the range (0,1]. Defaults to %(default)f"
     )
     parser.add_argument(
-        "-m", "--min-scene-length", action="store", metavar="SECONDS", type=PositiveInt, default=30,
+        "-m", "--min-scene-length", action="store", metavar="SECONDS", type=PositiveInt, default=PositiveInt(30),
         help="Minimal allowed scene duration in seconds. "
              "Adjacent detected scenes are combined to have at least this duration, if possible. "
              "This is not a hard limit. It prevents splitting the input video into many small and "
@@ -232,8 +232,8 @@ def _generate_argument_parser() -> ArgumentParser:
         "--deinterlace", action="store_true",
         help="Deinterlace the interlaced input video using the yadif video filter. BEWARE: "
              "This uses an ffmpeg video filter, thus is incompatible with additional custom video filters given using "
-             "--encoder-parameters. If you use custom video filters, add the de-interlace filter to your filter chain "
-             "instead of using this option."
+             "--encoder-parameters. If you use custom video filters or require another deinterlacer, like IVTC, "
+             "add the de-interlace filter to your filter chain instead of using this option."
     )
     parser.add_argument(
         "-L", "--limit-encodes", action="store", metavar="NUMBER", type=PositiveInt,
@@ -257,28 +257,29 @@ def _generate_argument_parser() -> ArgumentParser:
         "--cutelog-integration",
         action="store_true",
         help="Connect to a running cutelog instance with default settings to display the full program log. "
-             "See https://github.com/busimus/cutelog"
+             "See https://github.com/busimus/cutelog for details."
     )
     parser.add_argument(
         "--ffmpeg",
         default="ffmpeg", metavar="EXECUTABLE_NAME",
         help="Specify the ffmpeg executable name. "
-             "Can be a relative or absolute path or a simple name. If given a simple name, the system "
-             "PATH variable will be searched. Defaults to \"%(default)s\""
+             "Can be a relative or absolute path or a simple name (i.e. an executable name without path separators). "
+             "If given a simple name, the system PATH variable will be searched. Defaults to \"%(default)s\""
     )
     parser.add_argument(
         "--ffprobe",
         default="ffprobe", metavar="EXECUTABLE_NAME",
         help="Specify the ffprobe executable name. "
-             "Can be a relative or absolute path or a simple name. If given a simple name, the system "
-             "PATH variable will be searched. Defaults to \"%(default)s\""
+             "Can be a relative or absolute path or a simple name (i.e. an executable name without path separators). "
+             "If given a simple name, the system PATH variable will be searched. Defaults to \"%(default)s\""
     )
     parser.add_argument(
         "--ffmpeg-base",
         default=None,
         metavar="DIRECTORY",
-        help="Specify the path to a custom ffmpeg installation. If given, both --ffmpeg and --ffprobe "
-             "arguments are treated as a path relative to this path."
+        help="Specify the path to a custom ffmpeg installation, for example \"/opt/ffmpeg/bin\". "
+             "If given, both --ffmpeg and --ffprobe arguments are treated as a path relative to this path. "
+             "Not set by default."
     )
     return parser
 

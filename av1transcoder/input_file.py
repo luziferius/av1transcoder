@@ -148,7 +148,7 @@ class Stream:
             end_point: str = element.get("value")
             duration_string, seconds_fraction = end_point.split(".")  # type: str, str
             # Prepend the decimal point to not interpret nanoseconds as seconds.
-            seconds_fraction = "0." + seconds_fraction
+            seconds_fraction = f"0.{seconds_fraction}"
             duration_seconds = enumerate(reversed([int(time_value) for time_value in duration_string.split(":")]))
             duration_sum = sum(time_value * 60**i for i, time_value in duration_seconds) + float(seconds_fraction)
             logger.debug(f"Success: Found duration using tag with key {element_name}: {end_point}")
