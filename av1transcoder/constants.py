@@ -13,9 +13,9 @@
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-__version__ = "0.4.0"
+__version__ = "0.4.1"
 
 
 PROGRAMNAME = "av1transcoder"
 VERSION = __version__
-COPYRIGHT = "(C) 2017-2019 Thomas Hess"
+COPYRIGHT = "(C) 2017-2020 Thomas Hess"
