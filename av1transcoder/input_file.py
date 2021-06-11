@@ -79,14 +79,14 @@ class Stream:
         # Don’t care what exactly this is, as long as it is an integer and ffprobe and ffmpeg are consistent on this.
         self.stream_id: int = int(stream.get("index"))
         # The start time. Some streams have a (positive or negative) offset relative to the file start.
-        self.start_time: float = float(stream.get("start_time"))
+        self.start_time: float = float(stream.get("start_time", "0"))
         # The stream duration in seconds. May be None, if not present in the gathered data.
         self.duration = self._extract_stream_duration(stream)
         # The format name.
         self.format_name: str = stream.get("codec_name")
         # Used to calculate PTS values
 
-        self.codec_time_base: float = self._parse_time_base(stream.get("codec_time_base"))
+        self.codec_time_base: float = self._parse_time_base(stream.get("codec_time_base", stream.get("time_base")))
         self.time_base: float = self._parse_time_base(stream.get("time_base"))
         # Contains a mapping from language code to stream name.
         # TODO: currently, the stream name is not read. Include this when supported by ffprobe.
