@@ -1,3 +1,7 @@
+Version 0.4.2 (11.06.2021)
+
+- Fixed crash with newer ffmpeg versions, caused by ffprobe changing it’s XML output format.
+
 Version 0.4.1 (30.04.2020)
 
 - Fixed parser issue with custom ffmpeg arguments that contain nested quotation marks with spaces
